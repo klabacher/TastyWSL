@@ -26,29 +26,29 @@ $DEBUG = "true" # set to true for testing purposes, lazy way
 
 # TODO: add more dependencies as needed | TODO: add winget and stuff later
 $dependencies = @{
-    wsl = {
+    wsl = @{
         name = "Windows Subsystem for Linux"
         install_instructions = "Follow instructions at https://docs.microsoft.com/en-us/windows/wsl/install-manual"
-        Version_Command = "wsl --version",
-        install_sources = {
+        Version_Command = "wsl --version"
+        install_sources = @{
             github_release_x64 = "https://github.com/microsoft/WSL/releases/download/2.6.1/wsl.2.6.1.0.x64.msi"
             github_release_arm64 = "https://github.com/microsoft/WSL/releases/download/2.6.1/wsl.2.6.1.0.arm64.msi"
         }
     }
-    wt = {
+    wt = @{
         name = "Windows Terminal"
         install_instructions = "Install from Microsoft Store: https://aka.ms/terminal"
         Version_Command = "wt --version"
-        install_sources = {
+        install_sources = @{
             github_release_x64 = "https://github.com/microsoft/terminal/releases/download/v1.23.12811.0/Microsoft.WindowsTerminal_1.23.12811.0_x64.zip"
             github_release_arm64 = "https://github.com/microsoft/terminal/releases/download/v1.23.12811.0/Microsoft.WindowsTerminal_1.23.12811.0_arm64.zip"
         }
     }
-    git = {
+    git = @{
         name = "Git"
         install_instructions = "Download and install from https://git-scm.com/download/win"
         Version_Command = "git --version"
-        install_sources = {
+        install_sources = @{
             github_release_x64 = "https://github.com/git-for-windows/git/releases/download/v2.51.0.windows.1/Git-2.51.0-64-bit.exe"
             github_release_arm64 = "https://github.com/git-for-windows/git/releases/download/v2.51.0.windows.1/Git-2.51.0-arm64.exe"
         }
@@ -62,16 +62,26 @@ function Log {
         [string]$message,
         [string]$level = "INFO"
     )
-    # Log level Debug
-    if ($DEBUG -eq "true" -and $level -eq "DEBUG") {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Write-Host "[$timestamp] [$level] $message" -ForegroundColor Red
-    } elseif ($level -ne "WARN") {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Write-Host "[$timestamp] [$level] $message" -ForegroundColor Yellow
-    } else {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Write-Host "[$timestamp] [$level] $message" -ForegroundColor Green
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    
+    switch ($level) {
+        "DEBUG" {
+            if ($DEBUG -eq "true") {
+                Write-Host "[$timestamp] [$level] $message" -ForegroundColor Magenta
+            }
+        }
+        "ERROR" {
+            Write-Host "[$timestamp] [$level] $message" -ForegroundColor Red
+        }
+        "WARN" {
+            Write-Host "[$timestamp] [$level] $message" -ForegroundColor Yellow
+        }
+        "INFO" {
+            Write-Host "[$timestamp] [$level] $message" -ForegroundColor Green
+        }
+        default {
+            Write-Host "[$timestamp] [$level] $message" -ForegroundColor White
+        }
     }
 }
 
@@ -87,7 +97,7 @@ function Get-MachineDetails {
     return @{
         OSVersion = $osVersion
         Architecture = $architecture
-        Detailed = {
+        Detailed = @{
             CPU = $cpuInfo
             RAM_GB = $ram
             DiskSpace_GB = $diskSpace
@@ -96,8 +106,11 @@ function Get-MachineDetails {
     }
 }
 
+$machineDetails = Get-MachineDetails
+$architecture = $machineDetails.Architecture
+
 Log "Machine Details:" "INFO"
-Log (Get-MachineDetails) "INFO"
+Log "$machineDetails" "INFO"
 
 # Calls for admin rights if not running as admin
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
@@ -136,7 +149,7 @@ function Enable-HyperV {
     
 }
 
-if (CheckHyperV -ne "Enabled") {
+if ((CheckHyperV) -ne "Enabled") {
     Enable-HyperV
 }
 
@@ -145,44 +158,59 @@ $availableDependencies = @()
 $unavailableDependencies = @()
 
 # Function to check if a command exists
-function Get-CommandInfo {
+function Test-CommandExists {
     param (
-        [string]$command,
+        [string]$command
+    )
+    return $null -ne (Get-Command $command -ErrorAction SilentlyContinue)
+}
+
+# Function to get version of a command
+function Get-CommandVersion {
+    param (
         [string]$version_command
     )
-    $null -ne (Get-Command $command -ErrorAction SilentlyContinue)
     try {
-        $versionOutput = & $version_command 2>&1
+        $versionOutput = Invoke-Expression $version_command 2>&1
         if ($versionOutput) {
-            return $versionOutput.Trim()
+            # Get first line of output (usually contains version)
+            $firstLine = ($versionOutput | Out-String).Trim().Split("`n")[0]
+            return $firstLine
         } else {
             return "Version information not available"
         }
     } catch {
-        return "Error retrieving version"
-    }
-}
-# Check for wsl, terminal(wt), and git
-foreach ($dep in $dependencies) {
-    if (-not (Get-CommandInfo $dep)) {
-        Log "$dep is not installed. Please install it before proceeding." "WARN"
-        $unavailableDependencies += $dep
-        exit 1
-    } else {
-        Log "$dep is installed." "INFO"
-        $availableDependencies += $dep
+        return "Error retrieving version: $($_.Exception.Message)"
     }
 }
 
-# Log versions of available dependencies and saves then to a object 
+# Check for wsl, terminal(wt), and git
+foreach ($depKey in $dependencies.Keys) {
+    if (-not (Test-CommandExists $depKey)) {
+        Log "$depKey ($($dependencies[$depKey].name)) is not installed." "WARN"
+        $unavailableDependencies += $depKey
+    } else {
+        Log "$depKey ($($dependencies[$depKey].name)) is installed." "INFO"
+        $availableDependencies += $depKey
+    }
+}
+
+# Log versions of available dependencies and saves them to an object 
 $dependencyVersions = @{}
 foreach ($dep in $availableDependencies) {
-    $dependencyVersions[$dep] = Get-CommandVersion $dep
+    $versionCmd = $dependencies[$dep].Version_Command
+    $dependencyVersions[$dep] = Get-CommandVersion $versionCmd
 }
 
 Log "Available Dependencies and their versions:" "INFO"
 foreach ($dep in $dependencyVersions.Keys) {
     Log "$dep : $($dependencyVersions[$dep])" "INFO"
+}
+
+# If there are unavailable dependencies, attempt to install them
+if ($unavailableDependencies.Count -gt 0) {
+    Log "Some dependencies are missing. Attempting to install..." "WARN"
+    Start-PackageInstall
 }
 
 function Install-WSL {
@@ -223,8 +251,42 @@ function Install-Terminal {
         [string]$direct_source = "" # Fallback to manual install if empty
     )
     if ($direct_source -ne "") {
-        Invoke-WebRequest -Uri $direct_source -OutFile "$env:TEMP\WindowsTerminal.zip"
-        # Extract and install logic here
+        try {
+            Log "Downloading Windows Terminal..." "INFO"
+            Invoke-WebRequest -Uri $direct_source -OutFile "$env:TEMP\WindowsTerminal.zip"
+            
+            # Create installation directory
+            $installPath = "$env:LOCALAPPDATA\Microsoft\WindowsTerminal"
+            if (Test-Path $installPath) {
+                Remove-Item -Path $installPath -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path $installPath -Force | Out-Null
+            
+            # Extract the ZIP file
+            Log "Extracting Windows Terminal..." "INFO"
+            Expand-Archive -Path "$env:TEMP\WindowsTerminal.zip" -DestinationPath $installPath -Force
+            
+            # Find the wt.exe and add to PATH if needed
+            $wtExe = Get-ChildItem -Path $installPath -Recurse -Filter "wt.exe" | Select-Object -First 1
+            if ($wtExe) {
+                $wtDir = $wtExe.DirectoryName
+                $currentPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+                if ($currentPath -notlike "*$wtDir*") {
+                    [System.Environment]::SetEnvironmentVariable("PATH", "$currentPath;$wtDir", "User")
+                    $env:PATH = "$env:PATH;$wtDir"
+                    Log "Added Windows Terminal to PATH." "INFO"
+                }
+            }
+            
+            # Cleanup
+            Remove-Item -Path "$env:TEMP\WindowsTerminal.zip" -Force -ErrorAction SilentlyContinue
+            
+            Log "Windows Terminal has been installed successfully." "INFO"
+            return "Success"
+        } catch {
+            Log "Failed to install Windows Terminal: $($_.Exception.Message)" "ERROR"
+            return "Failed"
+        }
     } else {
         Log "Please install Windows Terminal manually from: $install_instructions" "INFO"
         return "Failed"
