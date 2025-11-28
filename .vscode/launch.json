@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        
+    ]
+} 
+// {
+//     "version": "0.2.0",
+//     "configurations": [
+//         {
+//             "name": "PowerShell: Windows PowerShell",
+//             "type": "PowerShell",
+//             "request": "launch",
+//             "sessionName": "Windows PowerShell (x64)",
+//             "script": "${workspaceFolder}/scripts/bootstrap.ps1",
+//             "args": [],
+//         },
+//     ]
+// }

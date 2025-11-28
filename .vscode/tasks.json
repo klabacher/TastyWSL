@@ -1,0 +1,18 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "setup:http-server",
+            "type": "shell",
+            "options": {
+                "cwd": "${workspaceFolder}/scripts"
+            },
+            "command": "python",
+            "args": [
+                "-m",
+                "http.server",
+                "8080"
+            ],
+        },
+    ]
+}
